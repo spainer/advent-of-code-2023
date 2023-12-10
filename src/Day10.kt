@@ -1,3 +1,5 @@
+import kotlin.math.exp
+
 fun main() {
     val testInput = readInput("Day10_test")
     val input = readInput("Day10")
@@ -100,6 +102,13 @@ private fun findLoop(grid: List<List<PipeConnection?>>, start: Pair<Int, Int>): 
     return maxSteps
 }
 
+private fun Pair<Int,Int>.toExpanded() = this.first * 2 to this.second * 2 + 1
+
+private fun Pair<Int,Int>.toOriginal(): Pair<Int,Int>? {
+    if (this.first % 2 != 0 || this.second % 2 != 1) return null
+    return this.first / 2 to (this.second - 1) / 2
+}
+
 private fun part1(input: List<String>): Int {
     val startCoord: Pair<Int, Int>
     val grid = buildList {
@@ -122,12 +131,100 @@ private fun part2(input: List<String>): Int {
         startCoord = replaceStart(raw)
         addAll(raw.map { it.toList() })
     }
+    val rowRange = 0..<grid.size
+    val colRange = 0..<grid[0].size
 
     val maxSteps = findLoop(grid, startCoord)
-    val loopGrid = maxSteps.map { line ->
-        line.map { if (it == Int.MAX_VALUE) '.' else '#' }
+    val cleanedGrid = grid.mapIndexed { rowIdx, row ->
+        row.mapIndexed { colIdx, col ->
+            if (maxSteps[rowIdx][colIdx] == Int.MAX_VALUE) null else col
+        }
     }
-    loopGrid.forEach(::println)
+    cleanedGrid.forEach {
+        println(it.map { if (it != null) '#' else '.' })
+    }
+    println()
 
-    return 0
+    val expandedGrid = cleanedGrid.flatMap { row -> listOf(
+        row.flatMap { when(it) {
+            PipeConnection.NE -> listOf(null, PipeConnection.NE)
+            PipeConnection.NS -> listOf(null, PipeConnection.NS)
+            PipeConnection.NW -> listOf(PipeConnection.EW, PipeConnection.NW)
+            PipeConnection.SE -> listOf(null, PipeConnection.SE)
+            PipeConnection.EW -> listOf(PipeConnection.EW, PipeConnection.EW)
+            PipeConnection.SW -> listOf(PipeConnection.EW, PipeConnection.SW)
+            else -> listOf(null, null)
+        } },
+        row.flatMap { when(it) {
+            PipeConnection.NE -> listOf(null, null)
+            PipeConnection.NS -> listOf(null, PipeConnection.NS)
+            PipeConnection.NW -> listOf(null, null)
+            PipeConnection.SE -> listOf(null, PipeConnection.NS)
+            PipeConnection.EW -> listOf(null, null)
+            PipeConnection.SW -> listOf(null, PipeConnection.NS)
+            else -> listOf(null, null)
+        } }
+    )}
+
+    expandedGrid.forEach { line ->
+        println(line.map { if (it != null) '#' else '.' })
+    }
+    val expandedRowRange = 0..<expandedGrid.size
+    val expandedColRange = 0..<expandedGrid[0].size
+
+    val emptyFields = cleanedGrid.flatMapIndexed { rowIdx, row ->
+        row.withIndex().filter { it.value == null }.map { (rowIdx to it.index).toExpanded() }
+    }.toMutableList()
+
+    val travelled = mutableSetOf<Pair<Int, Int>>()
+    val inner = mutableSetOf<Pair<Int, Int>>()
+    val outer = mutableSetOf<Pair<Int, Int>>()
+    outer@ while (emptyFields.isNotEmpty()) {
+        val start = emptyFields.removeFirst()
+        if (start in travelled) continue
+
+        val reached = mutableSetOf(start)
+        val next = mutableListOf(start)
+        while (next.isNotEmpty()) {
+            val pt = next.removeFirst()
+            var possibleNext = listOf(
+                    pt.first - 1 to pt.second,
+                    pt.first + 1 to pt.second,
+                    pt.first to pt.second - 1,
+                    pt.first to pt.second + 1
+                ).filter { it !in reached }
+
+            if (possibleNext.any { it.first !in expandedRowRange || it.second !in expandedColRange }) {
+                outer.addAll(reached)
+                travelled.addAll(reached)
+                continue@outer
+            }
+
+            possibleNext = possibleNext.filter { expandedGrid[it.first][it.second] == null }
+
+            if (possibleNext.any { it in outer }) {
+                outer.addAll(reached)
+                outer.addAll(possibleNext)
+                travelled.addAll(reached)
+                travelled.addAll(possibleNext)
+                continue@outer
+            } else if (possibleNext.any { it in inner }) {
+                inner.addAll(reached)
+                inner.addAll(possibleNext)
+                travelled.addAll(reached)
+                travelled.addAll(possibleNext)
+                continue@outer
+            }
+
+            reached.addAll(possibleNext)
+            next.addAll(possibleNext)
+        }
+
+        inner.addAll(reached)
+        travelled.addAll(reached)
+    }
+
+    val filteredInner = inner.mapNotNull { it.toOriginal() }
+        .filter { it.first in rowRange && it.second in colRange }
+    return filteredInner.size
 }
